@@ -9,9 +9,9 @@ given circeConfig: Configuration =
 
 enum FailureCode(val code: Int):
   case INVALID_JSON extends FailureCode(10)
-  case INVALID_REQUEST extends FailureCode(30)
-  case UPDATE_CLIENT_APP extends FailureCode(40)
-  case INFRA_FAIL extends FailureCode(50)
+  case INVALID_REQUEST extends FailureCode(20)
+  case UPDATE_CLIENT_APP extends FailureCode(30)
+  case INFRA_FAIL extends FailureCode(40)
 
 given Encoder[FailureCode] = Encoder.encodeInt.contramap(_.code)
 given Decoder[FailureCode] = Decoder.decodeInt.emap: enumCode =>

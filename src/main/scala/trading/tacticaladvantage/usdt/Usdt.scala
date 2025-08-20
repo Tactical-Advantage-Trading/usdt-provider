@@ -28,10 +28,10 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val typeRef = new TypeReference[Uint256] {}
   val httpW3 = Web3j.build(http)
 
-  type UsdcTransfers = Seq[UsdtTransfer]
-  val transferHistoryCache: LoadingCache[String, UsdcTransfers] =
-    val loader = new CacheLoader[String, UsdcTransfers]:
-      override def load(adr: String): UsdcTransfers =
+  type UsdtTransfers = Seq[UsdtTransfer]
+  val transferHistoryCache: LoadingCache[String, UsdtTransfers] =
+    val loader = new CacheLoader[String, UsdtTransfers]:
+      override def load(adr: String): UsdtTransfers =
         val result = DbOps.txBlockingRead(RecordTxsUsdtPolygon.forAddress(adr).result, conf.db)
         for (_, amount, txHash, block, fromAddr, toAddr, _, _, _, stamp, isRemoved) <- result
           yield UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
