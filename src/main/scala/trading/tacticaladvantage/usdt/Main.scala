@@ -7,5 +7,14 @@ import trading.tacticaladvantage.USDTWrap
 @main
 def main: Unit =
   val conf = parser.decode[USDTWrap](/**/)
-  val server = WsServer(conf.toOption.get.usdt)
-  server.start
+  val usdt1 = conf.toOption.get.usdt
+
+//  DbOps.tx(DbOps.removeTables, usdt1.db)
+//  DbOps.tx(DbOps.createTables, usdt1.db)
+//  println("ok")
+
+
+  val usdt = Usdt(usdt1)
+  usdt.wrap = new usdt.WebConnectionWrap
+//  val server = WsServer(conf.toOption.get.usdt)
+//  server.start

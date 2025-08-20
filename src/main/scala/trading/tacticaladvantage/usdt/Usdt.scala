@@ -1,6 +1,7 @@
 package trading.tacticaladvantage.usdt
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import org.slf4j.{Logger, LoggerFactory}
 import org.web3j.abi.datatypes.generated.Uint256
 import org.web3j.abi.datatypes.{Address, Function}
 import org.web3j.abi.{FunctionEncoder, TypeReference}
@@ -24,6 +25,7 @@ import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
 class Usdt(conf: USDT) extends StateMachine[Nothing]:
+  val logger: Logger = LoggerFactory.getLogger("backend/Usdt")
   val fallback = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
   val http = HttpService(conf.usdtDataProvider.http)
   val typeRef = new TypeReference[Uint256] {}
@@ -34,7 +36,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     val loader = new CacheLoader[String, UsdtTransfers]:
       override def load(adr: String): UsdtTransfers =
         val result = DbOps.txBlockingRead(RecordTxsUsdtPolygon.forAddress(adr).result, conf.db)
-        for (_, amount, txHash, block, fromAddr, toAddr, _, _, _, stamp, isRemoved) <- result
+        for (_, amount, txHash, block, fromAddr, toAddr, _, _, stamp, isRemoved) <- result
           yield UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
     CacheBuilder.newBuilder.maximumSize(100_000).build(loader)
 
@@ -65,6 +67,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
     val wsClient = new org.web3j.protocol.websocket.WebSocketClient(wssUri):
       override def onClose(code: Int, reason: String, fromRemote: Boolean): Unit =
+        logger.info(s"Websocket disconnected, code=$code, reason=$reason")
         delay(2) { wrap = new WebConnectionWrap }
         transferHistoryCache.invalidateAll
         balanceNonceCache.invalidateAll
@@ -76,7 +79,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     Try:
       ws.connect
       filter.addSingleTopic(topic)
-      wsW3.ethLogFlowable(filter).buffer(20).subscribe(logs =>
+      logger.info(s"Websocket connected")
+      wsW3.ethLogFlowable(filter).buffer(10).subscribe(logs => {
+        // Batch multiple transfers to save on database writes
         val res = logs.asScala.map: log =>
           val transfer = UsdtTransfer(log.getData, log.getTopics.get(1).substring(26), log.getTopics.get(2).substring(26),
             log.getTransactionHash, log.getBlockNumber.longValue, System.currentTimeMillis, Option(log.isRemoved) getOrElse false)
@@ -92,12 +97,11 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
           for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
             watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil, currentBlock).asSome)
-
-          RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block,
-            transfer.fromAddr, transfer.toAddr, log.getType, log.getData, 
-            topic.mkString(","), transfer.stamp, transfer.isRemoved)
+            
+          RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr, transfer.toAddr,
+            log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
         DbOps.txWrite(DBIO.sequence(res), conf.db)
-      , _ => wsClient.closeBlocking)
+      }, _ => wsClient.closeBlocking)
 
   @targetName("doTell")
   def !! (event: Any): Unit =
