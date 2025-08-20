@@ -10,9 +10,9 @@
     </appender>
 
     <appender name="ROLLING" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>maker.log</file>
+        <file>usdt.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>maker.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>usdt.%d{yyyy-MM-dd}.log</fileNamePattern>
             <totalSizeCap>5GB</totalSizeCap>
             <maxHistory>14</maxHistory>
         </rollingPolicy>

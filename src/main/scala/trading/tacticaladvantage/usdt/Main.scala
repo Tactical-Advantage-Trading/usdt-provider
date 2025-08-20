@@ -7,5 +7,5 @@ import trading.tacticaladvantage.USDTWrap
 @main
 def main: Unit =
   val conf = parser.decode[USDTWrap](/**/)
-  println(conf.toOption.get)
-
+  val server = WsServer(conf.toOption.get.usdt)
+  server.start

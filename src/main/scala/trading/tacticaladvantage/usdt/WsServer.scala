@@ -11,9 +11,10 @@ import java.nio.ByteBuffer
 import scala.annotation.targetName
 import scala.util.Random
 
-class WsServer(val conf: USDT, val usdt: Usdt) extends WebSocketServer(conf.websocketServer.address) with StateMachine[Nothing]:
+class WsServer(conf: USDT) extends WebSocketServer(conf.address) with StateMachine[Nothing]:
   val logger: Logger = LoggerFactory.getLogger("backend/WsServer")
   var links: Map[String, Link] = Map.empty
+  val usdt = Usdt(conf)
 
   @targetName("doTell")
   def !!(change: Any): Unit =
@@ -28,21 +29,22 @@ class WsServer(val conf: USDT, val usdt: Usdt) extends WebSocketServer(conf.webs
         usdt ! connId
 
   override def onStart: Unit = 
+    usdt.wrap = new usdt.WebConnectionWrap
     logger.info("Started successfully")
 
   override def onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean): Unit =
-    logger.debug(s"Connection closed, reason=$reason, remote=$remote, code=$code")
+    logger.info(s"Connection closed, reason=$reason, remote=$remote, code=$code")
     this ! conn.getAttachment[String]
 
   override def onError(conn: WebSocket, ex: Exception): Unit =
-    logger.error("Runtime failure", ex)
+    logger.info("Runtime failure", ex)
     conn.close(505)
 
   override def onOpen(conn: WebSocket, handshake: ClientHandshake): Unit =
     this ! conn
 
   override def onMessage(conn: WebSocket, message: ByteBuffer): Unit =
-    logger.error("Unexpected binary", conn.getLocalSocketAddress)
+    logger.info("Unexpected binary", conn.getLocalSocketAddress)
 
   override def onMessage(conn: WebSocket, message: String): Unit =
     for link <- links get conn.getAttachment[String] do link ! message

@@ -27,9 +27,8 @@ libraryDependencies ++= Seq(
 )
 
 libraryDependencies ++= Seq(
-  "io.circe" % "circe-generic_3" % "0.14.14",
-  "io.circe" % "circe-parser_3" % "0.14.14",
-  "io.circe" %% "circe-config" % "0.10.2",
+  "ch.qos.logback" % "logback-core" % "1.5.18",
+  "ch.qos.logback" % "logback-classic" % "1.5.18",
 )
 
 libraryDependencies ++= Seq(

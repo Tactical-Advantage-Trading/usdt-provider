@@ -1,11 +1,9 @@
 package trading.tacticaladvantage.usdt
 
-import java.util.concurrent.{ConcurrentHashMap, Executors}
+import java.util.concurrent.Executors
 import scala.annotation.targetName
-import scala.collection.mutable
 import scala.compiletime.uninitialized
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
-import scala.jdk.CollectionConverters.*
 
 trait Processor:
   @targetName("doTell")

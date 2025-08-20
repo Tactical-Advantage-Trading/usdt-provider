@@ -18,6 +18,7 @@ import trading.tacticaladvantage.USDT
 import java.math.BigInteger
 import java.net.URI
 import scala.annotation.targetName
+import scala.compiletime.uninitialized
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
@@ -52,10 +53,10 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
           nonce = org.web3j.utils.Numeric.encodeQuantity(countResp), currentBlock)
     CacheBuilder.newBuilder.maximumSize(100_000).build(loader)
 
+  var currentBlock = 0L
   var address2Watch = Map.empty[String, Watch]
   var connId2Watch = Map.empty[String, Watch]
-  var wrap = new WebConnectionWrap
-  var currentBlock = 0L
+  var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
     val wssUri = new URI(conf.usdtDataProvider.wss)
