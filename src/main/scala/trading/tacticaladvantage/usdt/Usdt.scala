@@ -82,7 +82,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     Try:
       ws.connect
       filter.addSingleTopic(topic)
-      logger.info(s"Websocket connected")
+      logger.info(s"Started successfully")
       wsW3.ethLogFlowable(filter).buffer(10).subscribe(logs => {
         // Batch multiple transfers to save on database writes
         val res = logs.asScala.map: log =>

@@ -13,8 +13,5 @@ def main: Unit =
 //  DbOps.tx(DbOps.createTables, usdt1.db)
 //  println("ok")
 
-
-  val usdt = Usdt(usdt1)
-  usdt.wrap = new usdt.WebConnectionWrap
-//  val server = WsServer(conf.toOption.get.usdt)
-//  server.start
+  val server = WsServer(conf.toOption.get.usdt)
+  server.init("keystore.jks")
