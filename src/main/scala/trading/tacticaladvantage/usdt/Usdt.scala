@@ -1,6 +1,7 @@
 package trading.tacticaladvantage.usdt
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import com.softwaremill.quicklens.*
 import org.slf4j.{Logger, LoggerFactory}
 import org.web3j.abi.datatypes.generated.Uint256
 import org.web3j.abi.datatypes.{Address, Function}
@@ -31,7 +32,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val typeRef = new TypeReference[Uint256] {}
   val httpW3 = Web3j.build(http)
 
+  type Watches = Set[Watch]
   type UsdtTransfers = Seq[UsdtTransfer]
+
   val transferHistoryCache: LoadingCache[String, UsdtTransfers] =
     val loader = new CacheLoader[String, UsdtTransfers]:
       override def load(adr: String): UsdtTransfers =
@@ -57,7 +60,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
   var currentBlock = 0L
   var address2Watch = Map.empty[String, Watch]
-  var connId2Watch = Map.empty[String, Watch]
+  var connId2Watch = Map.empty[String, Watches].withDefaultValue(Set.empty)
   var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
@@ -107,16 +110,16 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   def !! (event: Any): Unit =
     event match
       case watch @ Watch(link, req, sub) =>
-        connId2Watch += (link.connId, watch)
-        address2Watch += (sub.address, watch)
+        address2Watch = address2Watch.updated(sub.address, watch)
+        connId2Watch = connId2Watch.modify(_ at link.connId).using(_ + watch)
         val history = transferHistoryCache.get(sub.address).filter(_.block > sub.afterBlock)
         val response = ResponseArguments.UsdtTransfers(history.toList, currentBlock)
         if history.nonEmpty then link.reply(req, response.asSome)
         sendBalanceNonce(sub.address)
       case connId: String =>
-        for watch <- connId2Watch.get(connId) do
+        connId2Watch(connId).foreach: watch =>
           address2Watch -= watch.sub.address
-          connId2Watch -= connId
+        connId2Watch -= connId
       case _ =>
 
   def sendBalanceNonce(address: String) = Future:
