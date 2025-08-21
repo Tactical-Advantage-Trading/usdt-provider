@@ -16,12 +16,12 @@ class Link(conn: WebSocket, val connId: String, val wsSrv: WsServer) extends Sta
   val VERSION: Char = '1'
   
   @targetName("doTell")
-  def !! (change: Any): Unit = (change, state) match
-    case (verJson: String, _) if VERSION > verJson.head =>
+  def !! (change: Any): Unit = change match
+    case verJson: String if VERSION > verJson.head =>
       val failure = ResponseArguments.UsdtFailure(FailureCode.UPDATE_CLIENT_APP)
       val response = Response(failure.asSome, id = GENERAL_ERROR)
       conn.send(response.asJson.noSpaces)
-    case (verJson: String, _) =>
+    case verJson: String =>
       decode[Request](verJson.tail) match
         case Right(userEvent) =>
           process(userEvent)
