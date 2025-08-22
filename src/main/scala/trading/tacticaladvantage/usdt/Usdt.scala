@@ -23,13 +23,15 @@ import scala.annotation.targetName
 import scala.compiletime.uninitialized
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
-import scala.util.Try
+import scala.util.{Success, Try}
+
+val AWAIT_BALANCE_NONCE_HTTP_ERROR = 2000
+val TYPE_REF = new TypeReference[Uint256] {} :: Nil
+val FALLBACK = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
 
 class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val logger: Logger = LoggerFactory.getLogger("backend/Usdt")
-  val fallback = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
   val http = HttpService(conf.usdtDataProvider.http)
-  val typeRef = new TypeReference[Uint256] {}
   val httpW3 = Web3j.build(http)
 
   type Watches = Set[Watch]
@@ -47,7 +49,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val balanceNonceCache: LoadingCache[String, ResponseArguments.UsdtBalanceNonce] =
     val loader = new CacheLoader[String, ResponseArguments.UsdtBalanceNonce]:
       override def load(adr: String): ResponseArguments.UsdtBalanceNonce =
-        val data = FunctionEncoder.encode(Function("balanceOf", (Address(adr) :: Nil).asJava, (typeRef :: Nil).asJava))
+        val data = FunctionEncoder.encode(Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava))
         val tokenBal = Transaction.createEthCallTransaction(adr, conf.usdtDataProvider.contract, data)
         val nonceReq = httpW3.ethGetTransactionCount(adr, PENDING)
         val balanceReq = httpW3.ethCall(tokenBal, LATEST)
@@ -122,9 +124,19 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         connId2Watch -= connId
       case _ =>
 
+  def getBalanceNonce(address: String, left: Int): ResponseArguments =
+    Try apply balanceNonceCache.get(address) match
+      case Success(result) =>
+        result
+      case _ if left > 0 =>
+        Thread.sleep(AWAIT_BALANCE_NONCE_HTTP_ERROR)
+        getBalanceNonce(address, left - 1)
+      case _ =>
+        FALLBACK
+
   def sendBalanceNonce(address: String) = Future:
-    val response = try balanceNonceCache.get(address) catch { case _: Throwable => fallback }
-    for watch <- address2Watch.get(address) do watch.link.reply(watch.req, response.asSome)
+    val response = getBalanceNonce(address, left = 2).asSome
+    for watch <- address2Watch.get(address) do watch.link.reply(watch.req, response)
 
   def convertBalance(hexString: String): BigDecimal =
     val bigInt = new BigInteger(hexString.substring(2), 16)
