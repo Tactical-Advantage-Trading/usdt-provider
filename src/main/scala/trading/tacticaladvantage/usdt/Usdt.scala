@@ -33,9 +33,6 @@ val FALLBACK = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
 
 class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val logger = LoggerFactory.getLogger("backend/Usdt")
-  val http = HttpService(conf.usdtDataProvider.http)
-  val httpW3 = Web3j.build(http)
-
   val addresses = Collections.singletonList(conf.usdtDataProvider.contract)
   val topic = Hash.sha3String("Transfer(address,address,uint256)")
   val topics = Collections.singletonList(topic)
@@ -57,6 +54,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       override def load(adr: String): ResponseArguments.UsdtBalanceNonce =
         val data = FunctionEncoder.encode(Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava))
         val tokenBal = Transaction.createEthCallTransaction(adr, conf.usdtDataProvider.contract, data)
+        val httpW3 = Web3j.build(HttpService(conf.usdtDataProvider.nextHttp))
         val nonceReq = httpW3.ethGetTransactionCount(adr, PENDING)
         val balanceReq = httpW3.ethCall(tokenBal, LATEST)
 
@@ -86,14 +84,14 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     wsClient.setConnectionLostTimeout(30)
     val ws = WebSocketService(wsClient, true)
     val wsW3 = Web3j.build(ws)
-    
+
     Try:
       ws.connect
       logger.info(s"Started successfully with $wssUri")
       wsW3.logsNotifications(addresses, topics).buffer(20).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
-          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26), 
+          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26),
             toAddr = "0x" + log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, isRemoved = false)
 
           transferHistoryCache.invalidate(transfer.fromAddr)

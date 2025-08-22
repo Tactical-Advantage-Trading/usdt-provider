@@ -17,7 +17,7 @@ final class RateLimiter(maxCalls: Int, perMillis: Long):
 
 case class Watch(link: Link, req: Request, sub: RequestArguments.UsdtSubscribe)
 class Link(conn: WebSocket, val connId: String, val wsSrv: WsServer) extends StateMachine[Nothing]:
-  val rateLimiter = RateLimiter(maxCalls = 4, perMillis = 1000L)
+  val rateLimiter = RateLimiter(maxCalls = 6, perMillis = 2000L)
   val logger = LoggerFactory.getLogger("backend/client/Link")
   val GENERAL_ERROR: String = "general-error"
   val VERSION: Char = '1'
