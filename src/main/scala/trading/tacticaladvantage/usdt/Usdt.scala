@@ -64,7 +64,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
-    val wssUri = new URI(conf.usdtDataProvider.wss)
+    val wssUri = new URI(conf.usdtDataProvider.nextWss)
     val topic = Hash.sha3String("Transfer(address,address,uint256)")
     val filter = EthFilter(LATEST, LATEST, conf.usdtDataProvider.contract)
 
@@ -82,8 +82,8 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     Try:
       ws.connect
       filter.addSingleTopic(topic)
-      logger.info(s"Started successfully")
-      wsW3.ethLogFlowable(filter).buffer(10).subscribe(logs => {
+      logger.info(s"Started successfully with $wssUri")
+      wsW3.ethLogFlowable(filter).buffer(20).subscribe(logs => {
         // Batch multiple transfers to save on database writes
         val res = logs.asScala.map: log =>
           val transfer = UsdtTransfer(log.getData, log.getTopics.get(1).substring(26), log.getTopics.get(2).substring(26),

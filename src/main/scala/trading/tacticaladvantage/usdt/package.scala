@@ -23,7 +23,12 @@ package object usdt:
   def interval(span: Int, period: TimeUnit)(act: => Unit): Disposable =
     Observable.interval(span, period).forEach(_ => act)
 
-case class UsdtDataProvider(contract: String, http: String, wss: String)
+case class UsdtDataProvider(contract: String, http: String, wss1: String, wss2: String, wss3: String):
+  private val wssPool = List(wss1, wss2, wss3)
+  private var index: Int = 0
+  def nextWss: String =
+    index = (index + 1) % wssPool.size
+    wssPool(index)
 case class USDT(usdtDataProvider: UsdtDataProvider, websocketServerPort: Int):
   lazy val address: InetSocketAddress = new InetSocketAddress(websocketServerPort)
   lazy val db: jdbc.PostgresProfile.backend.Database =

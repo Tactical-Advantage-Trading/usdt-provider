@@ -45,7 +45,6 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address) with StateMachi
     val factory = new DefaultSSLWebSocketServerFactory(sslContext)
 
     setWebSocketFactory(factory)
-    setConnectionLostTimeout(30)
     setReuseAddr(true)
     start
 
