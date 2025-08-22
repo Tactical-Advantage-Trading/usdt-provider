@@ -9,8 +9,15 @@ import slick.jdbc.PostgresProfile.api.*
 import scala.annotation.targetName
 import scala.util.{Failure, Random, Success}
 
+final class RateLimiter(maxCalls: Int, perMillis: Long):
+  private var history = Vector.empty[Long]
+  def exceedsLimit(now: Long): Boolean =
+    history = (history :+ now).dropWhile(now - _ > perMillis)
+    history.size > maxCalls
+
 case class Watch(link: Link, req: Request, sub: RequestArguments.UsdtSubscribe)
 class Link(conn: WebSocket, val connId: String, val wsSrv: WsServer) extends StateMachine[Nothing]:
+  val rateLimiter = RateLimiter(maxCalls = 4, perMillis = 1000L)
   val logger = LoggerFactory.getLogger("backend/client/Link")
   val GENERAL_ERROR: String = "general-error"
   val VERSION: Char = '1'
@@ -39,5 +46,6 @@ class Link(conn: WebSocket, val connId: String, val wsSrv: WsServer) extends Sta
     reply(req, ResponseArguments.UsdtFailure(fail).asSome)
 
   def process(req: Request): Unit = req.arguments match
-    case sub: RequestArguments.UsdtSubscribe => wsSrv.usdt ! Watch(this, req, sub)
+    case _ if rateLimiter.exceedsLimit(System.currentTimeMillis) => replyFailure(req, FailureCode.INVALID_REQUEST)
+    case subscribe: RequestArguments.UsdtSubscribe => wsSrv.usdt ! Watch(this, req, subscribe)
     case _ => replyFailure(req, FailureCode.INVALID_REQUEST)
