@@ -8,6 +8,7 @@ import org.web3j.abi.datatypes.{Address, Function}
 import org.web3j.abi.{FunctionEncoder, TypeReference}
 import org.web3j.crypto.Hash
 import org.web3j.protocol.Web3j
+import org.web3j.utils.Numeric
 import org.web3j.protocol.core.DefaultBlockParameterName.{LATEST, PENDING}
 import org.web3j.protocol.core.methods.request.{EthFilter, Transaction}
 import org.web3j.protocol.core.methods.response.{EthCall, EthGetTransactionCount}
@@ -19,6 +20,7 @@ import trading.tacticaladvantage.USDT
 
 import java.math.BigInteger
 import java.net.URI
+import java.util.Collections
 import scala.annotation.targetName
 import scala.compiletime.uninitialized
 import scala.concurrent.Future
@@ -30,9 +32,13 @@ val TYPE_REF = new TypeReference[Uint256] {} :: Nil
 val FALLBACK = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
 
 class Usdt(conf: USDT) extends StateMachine[Nothing]:
-  val logger: Logger = LoggerFactory.getLogger("backend/Usdt")
+  val logger = LoggerFactory.getLogger("backend/Usdt")
   val http = HttpService(conf.usdtDataProvider.http)
   val httpW3 = Web3j.build(http)
+
+  val addresses = Collections.singletonList(conf.usdtDataProvider.contract)
+  val topic = Hash.sha3String("Transfer(address,address,uint256)")
+  val topics = Collections.singletonList(topic)
 
   type Watches = Set[Watch]
   type UsdtTransfers = Seq[UsdtTransfer]
@@ -67,35 +73,33 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
   class WebConnectionWrap:
     val wssUri = new URI(conf.usdtDataProvider.nextWss)
-    val topic = Hash.sha3String("Transfer(address,address,uint256)")
-    val filter = EthFilter(LATEST, LATEST, conf.usdtDataProvider.contract)
-
     val wsClient = new org.web3j.protocol.websocket.WebSocketClient(wssUri):
       override def onClose(code: Int, reason: String, fromRemote: Boolean): Unit =
-        logger.info(s"Websocket disconnected, code=$code, reason=$reason")
+        logger.info(s"Disconnected, code=$code, reason=$reason")
         delay(2) { wrap = new WebConnectionWrap }
         transferHistoryCache.invalidateAll
         balanceNonceCache.invalidateAll
+      override def onError(e: Exception): Unit =
+        onClose(-1, "error", fromRemote = false)
+        super.onError(e)
 
-    wsClient.setConnectionLostTimeout(5)
+    wsClient.setConnectionLostTimeout(30)
     val ws = WebSocketService(wsClient, true)
     val wsW3 = Web3j.build(ws)
-
+    
     Try:
       ws.connect
-      filter.addSingleTopic(topic)
       logger.info(s"Started successfully with $wssUri")
-      wsW3.ethLogFlowable(filter).buffer(20).subscribe(logs => {
-        // Batch multiple transfers to save on database writes
-        val res = logs.asScala.map: log =>
-          val transfer = UsdtTransfer(log.getData, log.getTopics.get(1).substring(26), log.getTopics.get(2).substring(26),
-            log.getTransactionHash, log.getBlockNumber.longValue, System.currentTimeMillis, Option(log.isRemoved) getOrElse false)
+      wsW3.logsNotifications(addresses, topics).buffer(20).subscribe(logs => {
+        val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
+          currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
+          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = log.getTopics.get(1).substring(26), 
+            toAddr = log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, isRemoved = false)
 
           transferHistoryCache.invalidate(transfer.fromAddr)
           transferHistoryCache.invalidate(transfer.toAddr)
           balanceNonceCache.invalidate(transfer.fromAddr)
           balanceNonceCache.invalidate(transfer.toAddr)
-          currentBlock = transfer.block
 
           if address2Watch.contains(transfer.toAddr) then sendBalanceNonce(transfer.toAddr)
           if address2Watch.contains(transfer.fromAddr) then sendBalanceNonce(transfer.fromAddr)
@@ -103,8 +107,8 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
           for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
             watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil, currentBlock).asSome)
             
-          RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr, transfer.toAddr,
-            log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
+          RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
+            transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
         DbOps.txWrite(DBIO.sequence(res), conf.db)
       }, _ => wsClient.closeBlocking)
 

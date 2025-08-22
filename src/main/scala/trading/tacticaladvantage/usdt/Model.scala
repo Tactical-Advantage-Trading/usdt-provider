@@ -31,7 +31,7 @@ object RecordTxsUsdtPolygon:
   def upsert(amount: String, txHash: String, blockNum: Long, fromAddress: String, toAddress: String, data: String, topics: String, stamp: Long, rm: Boolean) = sqlu"""
     INSERT INTO #$tableName (amount, hash, block, from_addr, to_addr, data, topics, stamp, is_removed)
     VALUES ($amount, $txHash, $blockNum, $fromAddress, $toAddress, $data, $topics, $stamp, $rm)
-    ON CONFLICT (hash) DO UPDATE SET is_removed = $rm, block = $blockNum, stamp = $stamp
+    ON CONFLICT (hash, from_addr, to_addr) DO UPDATE SET is_removed = $rm, block = $blockNum
   """
 
   val forAddress = Compiled: (address: DbOps.StringRep) =>
@@ -41,11 +41,10 @@ object RecordTxsUsdtPolygon:
 class RecordTxsUsdtPolygon(tag: Tag) extends Table[RecordTxsUsdtPolygon.DbType](tag, RecordTxsUsdtPolygon.tableName):
   def * = (id, amount, txHash, block, fromAddr, toAddr, data, topics, stamp, isRemoved)
 
-  def idx1: Index = index("idx_to", toAddr, unique = false)
+  def idx1: Index = index("idx_hash_from_to", (txHash, fromAddr, toAddr), unique = true)
   def idx2: Index = index("idx_from", fromAddr, unique = false)
-  def idx3: Index = index("idx_block", block, unique = false)
-  def idx4: Index = index("idx_hash", txHash, unique = true)
-
+  def idx3: Index = index("idx_to", toAddr, unique = false)
+  
   def id: Rep[Long] = column[Long]("id", O.PrimaryKey, O.AutoInc)
   def isRemoved: Rep[Boolean] = column[Boolean]("is_removed")
   def fromAddr: Rep[String] = column[String]("from_addr")
