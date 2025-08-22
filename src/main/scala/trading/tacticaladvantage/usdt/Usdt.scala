@@ -93,8 +93,8 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       wsW3.logsNotifications(addresses, topics).buffer(20).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
-          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = log.getTopics.get(1).substring(26), 
-            toAddr = log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, isRemoved = false)
+          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26), 
+            toAddr = "0x" + log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, isRemoved = false)
 
           transferHistoryCache.invalidate(transfer.fromAddr)
           transferHistoryCache.invalidate(transfer.toAddr)
