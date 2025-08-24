@@ -2,25 +2,25 @@ package trading.tacticaladvantage.usdt
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import com.softwaremill.quicklens.*
-import org.slf4j.{Logger, LoggerFactory}
+import org.slf4j.LoggerFactory
 import org.web3j.abi.datatypes.generated.Uint256
 import org.web3j.abi.datatypes.{Address, Function}
 import org.web3j.abi.{FunctionEncoder, TypeReference}
-import org.web3j.crypto.Hash
 import org.web3j.protocol.Web3j
-import org.web3j.utils.Numeric
 import org.web3j.protocol.core.DefaultBlockParameterName.{LATEST, PENDING}
-import org.web3j.protocol.core.methods.request.{EthFilter, Transaction}
-import org.web3j.protocol.core.methods.response.{EthCall, EthGetTransactionCount}
+import org.web3j.protocol.core.Request
+import org.web3j.protocol.core.methods.request.Transaction
+import org.web3j.protocol.core.methods.response.{EthCall, EthGetTransactionCount, EthSubscribe}
 import org.web3j.protocol.http.HttpService
 import org.web3j.protocol.websocket.WebSocketService
+import org.web3j.protocol.websocket.events.LogExtNotification
+import org.web3j.utils.Numeric
 import slick.dbio.DBIO
 import slick.jdbc.PostgresProfile.api.*
 import trading.tacticaladvantage.USDT
 
 import java.math.BigInteger
 import java.net.URI
-import java.util.Collections
 import scala.annotation.targetName
 import scala.compiletime.uninitialized
 import scala.concurrent.Future
@@ -33,9 +33,16 @@ val FALLBACK = ResponseArguments.UsdtFailure(FailureCode.INFRA_FAIL)
 
 class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val logger = LoggerFactory.getLogger("backend/Usdt")
-  val addresses = Collections.singletonList(conf.usdtDataProvider.contract)
-  val topic = Hash.sha3String("Transfer(address,address,uint256)")
-  val topics = Collections.singletonList(topic)
+  val logExtClass = classOf[LogExtNotification]
+  val subClass = classOf[EthSubscribe]
+
+  val addresses = java.util.Collections.singletonList(conf.usdtDataProvider.contract)
+  val topic = org.web3j.crypto.Hash.sha3String("Transfer(address,address,uint256)")
+  val topics = java.util.Collections.singletonList(topic)
+
+  val params = new java.util.HashMap[String, AnyRef]
+  params.put("address", addresses)
+  params.put("topics", topics)
 
   type Watches = Set[Watch]
   type UsdtTransfers = Seq[UsdtTransfer]
@@ -88,11 +95,13 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     Try:
       ws.connect
       logger.info(s"Started successfully with $wssUri")
-      wsW3.logsNotifications(addresses, topics).buffer(20).subscribe(logs => {
+      val paramsList = java.util.Arrays.asList("logs", params)
+      val req = new Request("eth_subscribe", paramsList, ws, subClass)
+      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(50).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
           val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26),
-            toAddr = "0x" + log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, isRemoved = false)
+            toAddr = "0x" + log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, log.isRemoved)
 
           transferHistoryCache.invalidate(transfer.fromAddr)
           transferHistoryCache.invalidate(transfer.toAddr)
@@ -104,7 +113,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
           for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
             watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil, currentBlock).asSome)
-            
+
           RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
             transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
         DbOps.txWrite(DBIO.sequence(res), conf.db)
