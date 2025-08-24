@@ -21,6 +21,7 @@ import trading.tacticaladvantage.USDT
 
 import java.math.BigInteger
 import java.net.URI
+import java.nio.{ByteBuffer, ByteOrder}
 import scala.annotation.targetName
 import scala.compiletime.uninitialized
 import scala.concurrent.Future
@@ -67,8 +68,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
         val responses = httpW3.newBatch.add(nonceReq).add(balanceReq).send.getResponses
         val countResp = responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount
-        ResponseArguments.UsdtBalanceNonce(adr, balance = responses.get(1).asInstanceOf[EthCall].getValue,
-          nonce = org.web3j.utils.Numeric.encodeQuantity(countResp), currentBlock)
+        val balance = responses.get(1).asInstanceOf[EthCall].getValue
+        val nonce = org.web3j.utils.Numeric.encodeQuantity(countResp)
+        ResponseArguments.UsdtBalanceNonce(adr, balance, nonce)
     CacheBuilder.newBuilder.maximumSize(100_000).build(loader)
 
   var currentBlock = 0L
@@ -97,7 +99,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       logger.info(s"Started successfully with $wssUri")
       val paramsList = java.util.Arrays.asList("logs", params)
       val req = new Request("eth_subscribe", paramsList, ws, subClass)
-      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(50).subscribe(logs => {
+      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(20).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
           val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26),
@@ -110,13 +112,13 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
           if address2Watch.contains(transfer.toAddr) then sendBalanceNonce(transfer.toAddr)
           if address2Watch.contains(transfer.fromAddr) then sendBalanceNonce(transfer.fromAddr)
-
-          for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
-            watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil, currentBlock).asSome)
+          for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) 
+            do watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil).asSome)
 
           RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
             transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
         DbOps.txWrite(DBIO.sequence(res), conf.db)
+        broadcastCurrentBlock(currentBlock)
       }, _ => wsClient.closeBlocking)
 
   @targetName("doTell")
@@ -126,8 +128,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         address2Watch = address2Watch.updated(sub.address, watch)
         connId2Watch = connId2Watch.modify(_ at link.connId).using(_ + watch)
         val history = transferHistoryCache.get(sub.address).filter(_.block > sub.afterBlock)
-        val response = ResponseArguments.UsdtTransfers(history.toList, currentBlock)
-        if history.nonEmpty then link.reply(req, response.asSome)
+        if history.nonEmpty then link.reply(req, ResponseArguments.UsdtTransfers(history.toList).asSome)
         sendBalanceNonce(sub.address)
       case connId: String =>
         connId2Watch(connId).foreach: watch =>
@@ -149,6 +150,15 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     val response = getBalanceNonce(address, left = 2).asSome
     for watch <- address2Watch.get(address) do watch.link.reply(watch.req, response)
 
+  def broadcastCurrentBlock(num: Long) =
+    val bytesToSend = ByteBuffer.allocate(java.lang.Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(num).array
+    for watch <- connId2Watch.values.flatMap(_.headOption) do watch.link.conn.send(bytesToSend)
+
   def convertBalance(hexString: String): BigDecimal =
     val bigInt = new BigInteger(hexString.substring(2), 16)
     BigDecimal(bigInt) / BigDecimal(10).pow(6)
+
+  def be8ToLong(bytes: Array[Byte], offset: Int = 0): Long =
+    ByteBuffer.wrap(bytes, offset, java.lang.Long.BYTES)
+      .order(ByteOrder.BIG_ENDIAN)
+      .getLong

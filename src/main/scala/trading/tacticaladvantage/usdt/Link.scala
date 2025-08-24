@@ -11,12 +11,12 @@ import scala.util.{Failure, Random, Success}
 
 final class RateLimiter(maxCalls: Int, perMillis: Long):
   private var history = Vector.empty[Long]
-  def exceedsLimit(now: Long): Boolean =
+  def exceedsLimit(now: Long = System.currentTimeMillis): Boolean =
     history = (history :+ now).dropWhile(now - _ > perMillis)
     history.size > maxCalls
 
 case class Watch(link: Link, req: Request, sub: RequestArguments.UsdtSubscribe)
-class Link(conn: WebSocket, val connId: String, val wsSrv: WsServer) extends StateMachine[Nothing]:
+class Link(val conn: WebSocket, val connId: String, val wsSrv: WsServer) extends StateMachine[Nothing]:
   val rateLimiter = RateLimiter(maxCalls = 6, perMillis = 2000L)
   val logger = LoggerFactory.getLogger("backend/client/Link")
   val GENERAL_ERROR: String = "general-error"

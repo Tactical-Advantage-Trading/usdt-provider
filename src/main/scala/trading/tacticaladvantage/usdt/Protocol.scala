@@ -29,8 +29,8 @@ enum RequestArguments(val tag: String):
 
 enum ResponseArguments(val tag: String):
   case UsdtFailure(failureCode: FailureCode) extends ResponseArguments("UsdtFailure")
-  case UsdtTransfers(transfers: List[UsdtTransfer], chainTip: Long) extends ResponseArguments("UsdtTransfers")
-  case UsdtBalanceNonce(address: String, balance: String, nonce: String, chainTip: Long) extends ResponseArguments("UsdtBalanceNonce")
+  case UsdtTransfers(transfers: List[UsdtTransfer] = Nil) extends ResponseArguments("UsdtTransfers")
+  case UsdtBalanceNonce(address: String, balance: String, nonce: String) extends ResponseArguments("UsdtBalanceNonce")
 
 given Encoder[RequestArguments] = ConfiguredEncoder.derived
 given Decoder[RequestArguments] = ConfiguredDecoder.derived
