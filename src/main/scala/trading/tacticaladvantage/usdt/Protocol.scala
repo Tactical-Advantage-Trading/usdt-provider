@@ -25,6 +25,7 @@ given Encoder[UsdtTransfer] = deriveEncoder
 given Decoder[UsdtTransfer] = deriveDecoder
 
 enum RequestArguments(val tag: String):
+  // Note: address should be lower-cased since we normalize addresses to be lower case on our side
   case UsdtSubscribe(address: String, afterBlock: Long) extends RequestArguments("UsdtSubscribe")
 
 enum ResponseArguments(val tag: String):

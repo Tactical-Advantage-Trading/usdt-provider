@@ -22,6 +22,7 @@ import trading.tacticaladvantage.USDT
 import java.math.BigInteger
 import java.net.URI
 import java.nio.{ByteBuffer, ByteOrder}
+import java.util.concurrent.TimeUnit
 import scala.annotation.targetName
 import scala.compiletime.uninitialized
 import scala.concurrent.Future
@@ -52,9 +53,12 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     val loader = new CacheLoader[String, UsdtTransfers]:
       override def load(adr: String): UsdtTransfers =
         val result = DbOps.txBlockingRead(RecordTxsUsdtPolygon.forAddress(adr).result, conf.db)
-        for (_, amount, txHash, block, fromAddr, toAddr, _, _, stamp, isRemoved) <- result
-          yield UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
-    CacheBuilder.newBuilder.maximumSize(100_000).build(loader)
+        for (_, amount, txHash, block, fromAddr, toAddr, _, _, stamp, isRemoved) <- result yield
+          UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
+    CacheBuilder.newBuilder
+      .expireAfterAccess(28, TimeUnit.DAYS)
+      .maximumSize(100_000)
+      .build(loader)
 
   // This one may explode, needs to be handled at caller site
   val balanceNonceCache: LoadingCache[String, ResponseArguments.UsdtBalanceNonce] =
@@ -67,11 +71,13 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         val balanceReq = httpW3.ethCall(tokenBal, LATEST)
 
         val responses = httpW3.newBatch.add(nonceReq).add(balanceReq).send.getResponses
-        val countResp = responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount
-        val balance = responses.get(1).asInstanceOf[EthCall].getValue
-        val nonce = org.web3j.utils.Numeric.encodeQuantity(countResp)
+        val balance = convertBalance(responses.get(1).asInstanceOf[EthCall].getValue).toString
+        val nonce = Numeric.encodeQuantity(responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount)
         ResponseArguments.UsdtBalanceNonce(adr, balance, nonce)
-    CacheBuilder.newBuilder.maximumSize(100_000).build(loader)
+    CacheBuilder.newBuilder
+      .expireAfterAccess(28, TimeUnit.DAYS)
+      .maximumSize(100_000)
+      .build(loader)
 
   var currentBlock = 0L
   var address2Watch = Map.empty[String, Watch]
@@ -99,11 +105,16 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       logger.info(s"Started successfully with $wssUri")
       val paramsList = java.util.Arrays.asList("logs", params)
       val req = new Request("eth_subscribe", paramsList, ws, subClass)
-      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(20).subscribe(logs => {
+      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
-          val transfer = UsdtTransfer(amount = convertBalance(log.getData).toString, fromAddr = "0x" + log.getTopics.get(1).substring(26),
-            toAddr = "0x" + log.getTopics.get(2).substring(26), log.getTransactionHash, currentBlock, System.currentTimeMillis, log.isRemoved)
+
+          val transfer =
+            UsdtTransfer(amount = convertBalance(log.getData).toString,
+              fromAddr = "0x" + log.getTopics.get(1).substring(26).toLowerCase,
+              toAddr = "0x" + log.getTopics.get(2).substring(26).toLowerCase,
+              log.getTransactionHash, currentBlock, System.currentTimeMillis,
+              log.isRemoved)
 
           transferHistoryCache.invalidate(transfer.fromAddr)
           transferHistoryCache.invalidate(transfer.toAddr)
@@ -112,11 +123,12 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
           if address2Watch.contains(transfer.toAddr) then sendBalanceNonce(transfer.toAddr)
           if address2Watch.contains(transfer.fromAddr) then sendBalanceNonce(transfer.fromAddr)
-          for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) 
-            do watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil).asSome)
+          for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
+            watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil).asSome)
 
           RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
             transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
+        logger.info(s"${res.size} transfers, currentBlock=$currentBlock")
         DbOps.txWrite(DBIO.sequence(res), conf.db)
         broadcastCurrentBlock(currentBlock)
       }, _ => wsClient.closeBlocking)
@@ -146,9 +158,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       case _ =>
         FALLBACK
 
-  def sendBalanceNonce(address: String) = Future:
-    val response = getBalanceNonce(address, left = 2).asSome
-    for watch <- address2Watch.get(address) do watch.link.reply(watch.req, response)
+  def sendBalanceNonce(adr: String) = Future:
+    val response = getBalanceNonce(address = adr, left = 2).asSome
+    for watch <- address2Watch.get(adr) do watch.link.reply(watch.req, response)
 
   def broadcastCurrentBlock(num: Long) =
     val bytesToSend = ByteBuffer.allocate(java.lang.Long.BYTES).order(ByteOrder.BIG_ENDIAN).putLong(num).array
@@ -157,8 +169,3 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   def convertBalance(hexString: String): BigDecimal =
     val bigInt = new BigInteger(hexString.substring(2), 16)
     BigDecimal(bigInt) / BigDecimal(10).pow(6)
-
-  def be8ToLong(bytes: Array[Byte], offset: Int = 0): Long =
-    ByteBuffer.wrap(bytes, offset, java.lang.Long.BYTES)
-      .order(ByteOrder.BIG_ENDIAN)
-      .getLong

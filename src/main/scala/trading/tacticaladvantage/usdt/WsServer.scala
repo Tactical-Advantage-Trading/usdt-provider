@@ -12,39 +12,27 @@ import javax.net.ssl.*
 import scala.annotation.targetName
 import scala.util.Random
 
-class WsServer(conf: USDT) extends WebSocketServer(conf.address) with StateMachine[Nothing]:
+class WsServer(conf: USDT) extends WebSocketServer(conf.address):
   val logger: Logger = LoggerFactory.getLogger("backend/WsServer")
   var links: Map[String, Link] = Map.empty
   val usdt = Usdt(conf)
 
-  @targetName("doTell")
-  def !!(change: Any): Unit =
-    change match
-      case wsClient: WebSocket =>
-        val connId = Random.alphanumeric.take(16).mkString
-        val newLink = Link(wsClient, connId, this)
-        wsClient.setAttachment[String](connId)
-        links += (connId, newLink)
-      case connId: String =>
-        links -= connId
-        usdt ! connId
-
   def init(keystoreResource: String, storePass: Array[Char] = "123456".toCharArray): Unit =
-    val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)
-    require(stream != null, "Keystore file is not found")
-    val ks = KeyStore.getInstance("JKS")
-    ks.load(stream, storePass)
-
-    val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
-    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
-    kmf.init(ks, storePass)
-    tmf.init(ks)
-
-    val sslContext = SSLContext.getInstance("TLS")
-    sslContext.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
-    val factory = new DefaultSSLWebSocketServerFactory(sslContext)
-
-    setWebSocketFactory(factory)
+//    val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)
+//    require(stream != null, "Keystore file is not found")
+//    val ks = KeyStore.getInstance("JKS")
+//    ks.load(stream, storePass)
+//
+//    val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
+//    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
+//    kmf.init(ks, storePass)
+//    tmf.init(ks)
+//
+//    val sslContext = SSLContext.getInstance("TLS")
+//    sslContext.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
+//    val factory = new DefaultSSLWebSocketServerFactory(sslContext)
+//
+//    setWebSocketFactory(factory)
     setReuseAddr(true)
     start
 
@@ -54,14 +42,18 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address) with StateMachi
 
   override def onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean): Unit =
     logger.info(s"Connection closed, reason=$reason, remote=$remote, code=$code")
-    this ! conn.getAttachment[String]
+    links -= conn.getAttachment[String]
+    usdt ! conn.getAttachment[String]
 
   override def onError(conn: WebSocket, ex: Exception): Unit =
     logger.info("Runtime failure", ex)
     conn.close(505)
 
   override def onOpen(conn: WebSocket, handshake: ClientHandshake): Unit =
-    this ! conn
+    val connId = Random.alphanumeric.take(16).mkString
+    val newLink = Link(conn, connId, this)
+    conn.setAttachment[String](connId)
+    links += (connId, newLink)
 
   override def onMessage(conn: WebSocket, message: ByteBuffer): Unit =
     logger.info("Unexpected binary", conn.getLocalSocketAddress)

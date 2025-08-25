@@ -23,20 +23,21 @@ class Link(val conn: WebSocket, val connId: String, val wsSrv: WsServer) extends
   val VERSION: Char = '1'
   
   @targetName("doTell")
-  def !! (change: Any): Unit = change match
-    case verJson: String if VERSION > verJson.head =>
-      val failure = ResponseArguments.UsdtFailure(FailureCode.UPDATE_CLIENT_APP)
-      val response = Response(failure.asSome, id = GENERAL_ERROR)
-      conn.send(response.asJson.noSpaces)
-    case verJson: String =>
-      decode[Request](verJson.tail) match
-        case Right(userEvent) =>
-          process(userEvent)
-        case _ =>
-          val failure = ResponseArguments.UsdtFailure(FailureCode.INVALID_JSON)
-          val response = Response(failure.asSome, id = GENERAL_ERROR)
-          conn.send(response.asJson.noSpaces)
-    case _ =>
+  def !! (change: Any): Unit =
+    change match
+      case verJson: String if VERSION > verJson.head =>
+        val failure = ResponseArguments.UsdtFailure(FailureCode.UPDATE_CLIENT_APP)
+        val response = Response(failure.asSome, id = GENERAL_ERROR)
+        conn.send(response.asJson.noSpaces)
+      case verJson: String =>
+        decode[Request](verJson.tail) match
+          case Right(userEvent) =>
+            process(userEvent)
+          case _ =>
+            val failure = ResponseArguments.UsdtFailure(FailureCode.INVALID_JSON)
+            val response = Response(failure.asSome, id = GENERAL_ERROR)
+            conn.send(response.asJson.noSpaces)
+      case _ =>
 
   def reply(req: Request, arguments: Option[ResponseArguments] = None): Unit =
     conn.send(Response(arguments, req.id).asJson.noSpaces)
