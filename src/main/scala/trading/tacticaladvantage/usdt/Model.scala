@@ -16,8 +16,16 @@ object DbOps:
   type StringRep = Rep[String]
   
   val span: FiniteDuration = 60.seconds
-  val removeTables = DBIO.seq(RecordTxsUsdtPolygon.model.schema.dropIfExists)
-  val createTables = DBIO.seq(RecordTxsUsdtPolygon.model.schema.createIfNotExists)
+  
+  val removeTables = DBIO.seq(
+    RecordTxsUsdtPolygon.model.schema.dropIfExists, 
+    RecordTrustedAddress.model.schema.dropIfExists
+  )
+  
+  val createTables = DBIO.seq(
+    RecordTxsUsdtPolygon.model.schema.createIfNotExists, 
+    RecordTrustedAddress.model.schema.createIfNotExists
+  )
   
   def tx[T, E <: Effect](act: DBIOAction[T, NoStream, E], db: Database): T = Await.result(db.run(act.transactionally), span)
   def txWrite[T](act: DBIOAction[T, NoStream, Effect.Write], db: Database): T = Await.result(db.run(act.transactionally), span)
@@ -54,4 +62,26 @@ class RecordTxsUsdtPolygon(tag: Tag) extends Table[RecordTxsUsdtPolygon.DbType](
   def txHash: Rep[String] = column[String]("hash")
   def data: Rep[String] = column[String]("data")
   def block: Rep[Long] = column[Long]("block")
+  def stamp: Rep[Long] = column[Long]("stamp")
+
+//
+
+object RecordTrustedAddress:
+  val tableName = "trusted_address"
+  val model = TableQuery[RecordTrustedAddress]
+  type DbType = (Long, String, BigDecimal, Long)
+
+  def upsert(address: String, amount: BigDecimal, stamp: Long = System.currentTimeMillis) = sqlu"""
+    INSERT INTO #$tableName (address, amount, stamp) VALUES ($address, $amount, $stamp)
+    ON CONFLICT (address) DO UPDATE SET amount = GREATEST(amount, EXCLUDED.amount)
+  """
+
+class RecordTrustedAddress(tag: Tag) extends Table[RecordTrustedAddress.DbType](tag, RecordTrustedAddress.tableName):
+  def * = (id, address, amount, stamp)
+
+  def idx1: Index = index("address", address, unique = true)
+
+  def id: Rep[Long] = column[Long]("id", O.PrimaryKey, O.AutoInc)
+  def amount: Rep[BigDecimal] = column[BigDecimal]("amount")
+  def address: Rep[String] = column[String]("address")
   def stamp: Rep[Long] = column[Long]("stamp")

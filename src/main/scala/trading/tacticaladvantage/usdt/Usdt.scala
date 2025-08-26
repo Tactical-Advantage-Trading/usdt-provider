@@ -71,9 +71,11 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         val balanceReq = httpW3.ethCall(tokenBal, LATEST)
 
         val responses = httpW3.newBatch.add(nonceReq).add(balanceReq).send.getResponses
-        val balance = convertBalance(responses.get(1).asInstanceOf[EthCall].getValue).toString
+        val balance = convertBalance(hexString = responses.get(1).asInstanceOf[EthCall].getValue)
         val nonce = Numeric.encodeQuantity(responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount)
-        ResponseArguments.UsdtBalanceNonce(adr, balance, nonce)
+        // In case of future DOS attacks we could at least prioritize addresses with some money held on them
+        if balance > 0 then DbOps.txWrite(RecordTrustedAddress.upsert(adr, balance), conf.db)
+        ResponseArguments.UsdtBalanceNonce(adr, balance.toString, nonce)
     CacheBuilder.newBuilder
       .expireAfterAccess(28, TimeUnit.DAYS)
       .maximumSize(100_000)
@@ -125,6 +127,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
           if address2Watch.contains(transfer.fromAddr) then sendBalanceNonce(transfer.fromAddr)
           for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
             watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil).asSome)
+            logger.info(s"${transfer.fromAddr} -> ${transfer.toAddr}, ${transfer.amount}")
 
           RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
             transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
