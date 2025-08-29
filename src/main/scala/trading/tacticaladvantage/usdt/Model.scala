@@ -72,8 +72,8 @@ object RecordTrustedAddress:
   type DbType = (Long, String, BigDecimal, Long)
 
   def upsert(address: String, amount: BigDecimal, stamp: Long = System.currentTimeMillis) = sqlu"""
-    INSERT INTO #$tableName (address, amount, stamp) VALUES ($address, $amount, $stamp)
-    ON CONFLICT (address) DO UPDATE SET amount = GREATEST(amount, EXCLUDED.amount)
+    INSERT INTO #$tableName as tbl (address, amount, stamp) VALUES ($address, $amount, $stamp)
+    ON CONFLICT (address) DO UPDATE SET amount = GREATEST(tbl.amount, EXCLUDED.amount)
   """
 
 class RecordTrustedAddress(tag: Tag) extends Table[RecordTrustedAddress.DbType](tag, RecordTrustedAddress.tableName):
