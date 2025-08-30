@@ -47,7 +47,7 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address):
 
   override def onError(conn: WebSocket, ex: Exception): Unit =
     logger.info("Runtime failure", ex)
-    conn.close(505)
+    Option(conn).foreach(_.close)
 
   override def onOpen(conn: WebSocket, handshake: ClientHandshake): Unit =
     val connId = Random.alphanumeric.take(16).mkString
