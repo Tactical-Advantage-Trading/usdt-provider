@@ -155,10 +155,10 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     Try apply balanceNonceCache.get(address) match
       case Success(result) =>
         result
-      case error if left > 0 =>
+      case _ if left > 0 =>
         Thread.sleep(AWAIT_BALANCE_NONCE_HTTP_ERROR)
         getBalanceNonce(address, left - 1)
-      case error =>
+      case _ =>
         FALLBACK
 
   def sendBalanceNonce(adr: String) = Future:
