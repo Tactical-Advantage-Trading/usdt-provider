@@ -49,4 +49,4 @@ class Link(val conn: WebSocket, val connId: String, val wsSrv: WsServer) extends
   def process(req: Request): Unit = req.arguments match
     case _ if rateLimiter.exceedsLimit(System.currentTimeMillis) => replyFailure(req, FailureCode.INVALID_REQUEST)
     case subscribe: RequestArguments.UsdtSubscribe => wsSrv.usdt ! Watch(this, req, subscribe)
-    case _ => replyFailure(req, FailureCode.INVALID_REQUEST)
+    case null => replyFailure(req, FailureCode.INVALID_REQUEST)

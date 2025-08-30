@@ -20,15 +20,12 @@ libraryDependencies += "com.google.guava" % "guava" % "33.4.8-jre"
 
 libraryDependencies += "org.java-websocket" % "Java-WebSocket" % "1.6.0"
 
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.18"
+
 libraryDependencies ++= Seq(
   "io.circe" % "circe-generic_3" % "0.14.14",
   "io.circe" % "circe-parser_3" % "0.14.14",
   "io.circe" %% "circe-config" % "0.10.2",
-)
-
-libraryDependencies ++= Seq(
-  "ch.qos.logback" % "logback-core" % "1.5.18",
-  "ch.qos.logback" % "logback-classic" % "1.5.18",
 )
 
 libraryDependencies ++= Seq(
@@ -37,14 +34,27 @@ libraryDependencies ++= Seq(
   "org.postgresql" % "postgresql" % "42.7.7",
 )
 
-// Assembly
-
-val workaround: Unit = {
-  sys.props += "packaging.type" -> "jar"
-}
+import sbtassembly.AssemblyPlugin.autoImport.*
+import sbtassembly.{MergeStrategy, PathList}
 
 assembly / assemblyMergeStrategy := {
-  case n if n.contains("djl") => MergeStrategy.first
-  case n if n.startsWith("META-INF") => MergeStrategy.discard
-  case _ => MergeStrategy.first
+  val old = (assembly / assemblyMergeStrategy).value
+
+  (path: String) => path match {
+    case "module-info.class" => MergeStrategy.discard
+    case PathList("META-INF", "versions", _*) => MergeStrategy.discard
+
+    case PathList("META-INF", "DEPENDENCIES") => MergeStrategy.discard
+    case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+    case PathList("META-INF", "LICENSE.txt") => MergeStrategy.discard
+    case PathList("META-INF", "INDEX.LIST") => MergeStrategy.discard
+    case PathList("META-INF", "NOTICE.txt") => MergeStrategy.discard
+    case PathList("META-INF", "LICENSE") => MergeStrategy.discard
+    case PathList("META-INF", "NOTICE") => MergeStrategy.discard
+
+    case PathList("META-INF", "services", _*) => MergeStrategy.concat
+    case "application.conf" => MergeStrategy.concat
+    case "reference.conf" => MergeStrategy.concat
+    case other => old(other)
+  }
 }
