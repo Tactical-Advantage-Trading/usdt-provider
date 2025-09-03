@@ -13,4 +13,4 @@ def main: Unit =
 //  DbOps.tx(DbOps.createTables, usdt1.db)
 
   val server = WsServer(conf.toOption.get.usdt)
-  server.init("keystore.jks")
+  server.init("keystore.p12")

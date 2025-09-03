@@ -20,7 +20,7 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address):
   def init(keystoreResource: String, storePass: Array[Char] = "123456".toCharArray): Unit =
     val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)
     require(stream != null, "Keystore file is not found")
-    val ks = KeyStore.getInstance("JKS")
+    val ks = KeyStore.getInstance("PKCS12")
     ks.load(stream, storePass)
 
     val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
@@ -37,7 +37,7 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address):
     start
 
   override def onStart: Unit =
-    logger.info("Started successfully")
+    logger.info("WS server started successfully")
     usdt.wrap = new usdt.WebConnectionWrap
 
   override def onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean): Unit =
