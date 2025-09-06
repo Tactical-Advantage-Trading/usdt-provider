@@ -73,8 +73,6 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         val responses = httpW3.newBatch.add(nonceReq).add(balanceReq).send.getResponses
         val balance = convertBalance(hexString = responses.get(1).asInstanceOf[EthCall].getValue)
         val nonce = Numeric.encodeQuantity(responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount)
-        // In case of future DOS attacks we could at least prioritize addresses with some money held on them
-        if balance > 0 then DbOps.txWrite(RecordTrustedAddress.upsert(adr, balance), conf.db)
         ResponseArguments.UsdtBalanceNonce(adr, balance.toString, nonce)
     CacheBuilder.newBuilder
       .expireAfterAccess(28, TimeUnit.DAYS)
@@ -107,7 +105,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       logger.info(s"Started successfully with $wssUri")
       val paramsList = java.util.Arrays.asList("logs", params)
       val req = new Request("eth_subscribe", paramsList, ws, subClass)
-      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
+      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(10).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
 
@@ -134,7 +132,10 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         logger.info(s"${res.size} transfers, currentBlock=$currentBlock")
         DbOps.txWrite(DBIO.sequence(res), conf.db)
         broadcastCurrentBlock(currentBlock)
-      }, _ => wsClient.closeBlocking)
+      }, error => {
+        println(error)
+        wsClient.closeBlocking
+      })
 
   @targetName("doTell")
   def !! (event: Any): Unit =
