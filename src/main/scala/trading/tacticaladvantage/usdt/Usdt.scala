@@ -2,6 +2,7 @@ package trading.tacticaladvantage.usdt
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import com.softwaremill.quicklens.*
+import io.reactivex.disposables.Disposable
 import org.slf4j.LoggerFactory
 import org.web3j.abi.datatypes.generated.Uint256
 import org.web3j.abi.datatypes.{Address, Function}
@@ -41,10 +42,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val addresses = java.util.Collections.singletonList(conf.usdtDataProvider.contract)
   val topic = org.web3j.crypto.Hash.sha3String("Transfer(address,address,uint256)")
   val topics = java.util.Collections.singletonList(topic)
-
-  val params = new java.util.HashMap[String, AnyRef]
-  params.put("address", addresses)
-  params.put("topics", topics)
+  
+  val params = Map("address" -> addresses, "topics" -> topics)
+  val paramsList = java.util.Arrays.asList("logs", params.asJava)
 
   type Watches = Set[Watch]
   type UsdtTransfers = Seq[UsdtTransfer]
@@ -64,9 +64,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   val balanceNonceCache: LoadingCache[String, ResponseArguments.UsdtBalanceNonce] =
     val loader = new CacheLoader[String, ResponseArguments.UsdtBalanceNonce]:
       override def load(adr: String): ResponseArguments.UsdtBalanceNonce =
-        val data = FunctionEncoder.encode(Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava))
+        val data = FunctionEncoder encode Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava)
         val tokenBal = Transaction.createEthCallTransaction(adr, conf.usdtDataProvider.contract, data)
-        val httpW3 = Web3j.build(HttpService(conf.usdtDataProvider.nextHttp))
+        val httpW3 = Web3j build HttpService(conf.usdtDataProvider.nextHttp)
         val nonceReq = httpW3.ethGetTransactionCount(adr, PENDING)
         val balanceReq = httpW3.ethCall(tokenBal, LATEST)
 
@@ -85,6 +85,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
+    var sub: Try[Disposable] = uninitialized
     val wssUri = new URI(conf.usdtDataProvider.nextWss)
     val wsClient = new org.web3j.protocol.websocket.WebSocketClient(wssUri):
       override def onClose(code: Int, reason: String, fromRemote: Boolean): Unit =
@@ -92,20 +93,18 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         delay(2) { wrap = new WebConnectionWrap }
         transferHistoryCache.invalidateAll
         balanceNonceCache.invalidateAll
+        sub.foreach(_.dispose)
       override def onError(e: Exception): Unit =
-        onClose(-1, "error", fromRemote = false)
+        onClose(-1, "onError", fromRemote = false)
         super.onError(e)
 
-    wsClient.setConnectionLostTimeout(30)
-    val ws = WebSocketService(wsClient, true)
-    val wsW3 = Web3j.build(ws)
+    val currentActiveWebSocket = WebSocketService(wsClient, true)
+    val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
 
-    Try:
-      ws.connect
+    sub = Try:
+      currentActiveWebSocket.connect
       logger.info(s"Started successfully with $wssUri")
-      val paramsList = java.util.Arrays.asList("logs", params)
-      val req = new Request("eth_subscribe", paramsList, ws, subClass)
-      ws.subscribe(req, "eth_unsubscribe", logExtClass).buffer(10).subscribe(logs => {
+      currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
 
@@ -132,10 +131,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         logger.info(s"${res.size} transfers, currentBlock=$currentBlock")
         DbOps.txWrite(DBIO.sequence(res), conf.db)
         broadcastCurrentBlock(currentBlock)
-      }, error => {
-        println(error)
-        wsClient.closeBlocking
-      })
+      }, _ => wsClient.closeBlocking)
 
   @targetName("doTell")
   def !! (event: Any): Unit =
