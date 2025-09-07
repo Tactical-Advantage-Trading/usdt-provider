@@ -18,21 +18,21 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address):
   val usdt = Usdt(conf)
 
   def init(keystoreResource: String, storePass: Array[Char] = "123456".toCharArray): Unit =
-//    val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)
-//    require(stream != null, "Keystore file is not found")
-//    val ks = KeyStore.getInstance("PKCS12")
-//    ks.load(stream, storePass)
-//
-//    val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
-//    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
-//    kmf.init(ks, storePass)
-//    tmf.init(ks)
-//
-//    val sslContext = SSLContext.getInstance("TLS")
-//    sslContext.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
-//    val factory = new DefaultSSLWebSocketServerFactory(sslContext)
-//
-//    setWebSocketFactory(factory)
+    val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)
+    require(stream != null, "Keystore file is not found")
+    val ks = KeyStore.getInstance("PKCS12")
+    ks.load(stream, storePass)
+
+    val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
+    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
+    kmf.init(ks, storePass)
+    tmf.init(ks)
+
+    val sslContext = SSLContext.getInstance("TLS")
+    sslContext.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
+    val factory = new DefaultSSLWebSocketServerFactory(sslContext)
+
+    setWebSocketFactory(factory)
     setReuseAddr(true)
     start
 
