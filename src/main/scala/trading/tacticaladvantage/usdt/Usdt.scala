@@ -65,15 +65,10 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
     val loader = new CacheLoader[String, ResponseArguments.UsdtBalanceNonce]:
       override def load(adr: String): ResponseArguments.UsdtBalanceNonce =
         val data = FunctionEncoder `encode` Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava)
-        val tokenBal = Transaction.createEthCallTransaction(adr, conf.usdtDataProvider.contract, data)
-        val httpW3 = Web3j `build` HttpService(conf.usdtDataProvider.nextHttp)
-        val nonceReq = httpW3.ethGetTransactionCount(adr, PENDING)
-        val balanceReq = httpW3.ethCall(tokenBal, LATEST)
-
-        val responses = httpW3.newBatch.add(nonceReq).add(balanceReq).send.getResponses
-        val balance = convertBalance(hexString = responses.get(1).asInstanceOf[EthCall].getValue)
-        val nonce = Numeric.encodeQuantity(responses.get(0).asInstanceOf[EthGetTransactionCount].getTransactionCount)
-        ResponseArguments.UsdtBalanceNonce(adr, balance.toString, nonce)
+        val tokenBal = Transaction.createEthCallTransaction(null, conf.usdtDataProvider.contract, data)
+        val ethCall = conf.usdtDataProvider.nextHttp.ethCall(tokenBal, LATEST)
+        val balance = convertBalance(ethCall.send.getValue).toString
+        ResponseArguments.UsdtBalanceNonce(adr, balance, "0x1")
     CacheBuilder.newBuilder
       .expireAfterAccess(28, TimeUnit.DAYS)
       .maximumSize(100_000)

@@ -3,6 +3,8 @@ package trading.tacticaladvantage
 import com.typesafe.config.ConfigFactory
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.disposables.Disposable
+import org.web3j.protocol.Web3j
+import org.web3j.protocol.http.HttpService
 import slick.jdbc
 import slick.jdbc.PostgresProfile
 
@@ -24,7 +26,7 @@ package object usdt:
     Observable.interval(span, period).forEach(_ => act)
 
 case class UsdtDataProvider(contract: String, http1: String, http2: String, http3: String, wss1: String, wss2: String, wss3: String):
-  private val httpPool = List(http1, http2, http3)
+  private val httpPool = List(http1, http2, http3).map(endpoint => HttpService `apply` endpoint).map(Web3j.build)
   private val wssPool = List(wss1, wss2, wss3)
   private var httpIndex: Int = 0
   private var wssIndex: Int = 0
@@ -32,7 +34,7 @@ case class UsdtDataProvider(contract: String, http1: String, http2: String, http
     val nextIndex = wssIndex + 1
     wssIndex = nextIndex % wssPool.size
     wssPool(wssIndex)
-  def nextHttp: String =
+  def nextHttp: Web3j =
     val nextIndex = httpIndex + 1
     httpIndex = nextIndex % httpPool.size
     httpPool(httpIndex)
