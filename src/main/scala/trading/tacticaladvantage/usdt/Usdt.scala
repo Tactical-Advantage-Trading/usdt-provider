@@ -51,8 +51,8 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
   val transferHistoryCache: LoadingCache[String, UsdtTransfers] =
     val loader = new CacheLoader[String, UsdtTransfers]:
-      override def load(adr: String): UsdtTransfers =
-        val result = DbOps.txBlockingRead(RecordTxsUsdtPolygon.forAddress(adr).result, conf.db)
+      override def load(address: String): UsdtTransfers =
+        val result = DbOps.txBlockingRead(RecordTxsUsdtPolygon.forAddress(address).result, conf.db)
         for (_, amount, txHash, block, fromAddr, toAddr, _, _, stamp, isRemoved) <- result yield
           UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
     CacheBuilder.newBuilder
@@ -63,12 +63,12 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   // This one may explode, needs to be handled at caller site
   val balanceNonceCache: LoadingCache[String, ResponseArguments.UsdtBalanceNonce] =
     val loader = new CacheLoader[String, ResponseArguments.UsdtBalanceNonce]:
-      override def load(adr: String): ResponseArguments.UsdtBalanceNonce =
-        val data = FunctionEncoder `encode` Function("balanceOf", (Address(adr) :: Nil).asJava, TYPE_REF.asJava)
+      override def load(address: String): ResponseArguments.UsdtBalanceNonce =
+        val data = FunctionEncoder `encode` Function("balanceOf", (Address(address) :: Nil).asJava, TYPE_REF.asJava)
         val tokenBal = Transaction.createEthCallTransaction(null, conf.usdtDataProvider.contract, data)
         val ethCall = conf.usdtDataProvider.nextHttp.ethCall(tokenBal, LATEST)
         val balance = convertBalance(ethCall.send.getValue).toString
-        ResponseArguments.UsdtBalanceNonce(adr, balance, "0x1")
+        ResponseArguments.UsdtBalanceNonce(address, balance, "0x1")
     CacheBuilder.newBuilder
       .expireAfterAccess(28, TimeUnit.DAYS)
       .maximumSize(100_000)
