@@ -1,5 +1,5 @@
 # USDt provider
-USDt chain data provider for Key wallet.
+Caching USDt chain data provider for [Key wallet](https://github.com/Tactical-Advantage-Trading/wallet).
 
 ## Installation and config on server and in wallet:
 
