@@ -95,7 +95,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       WebSocketService(wsClient, true)
 
     if Try(currentActiveWebSocket.connect).isSuccess then
-      logger.info(s"USDt started successfully with $wssUri")
+      logger.info(s"started successfully with $wssUri")
       val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
       currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
@@ -126,7 +126,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         broadcastCurrentBlock(currentBlock)
       }, _ => wsClient.closeBlocking)
     else
-      logger.info(s"USDt failed with $wssUri")
+      logger.info(s"failed with $wssUri")
       delay(2) { wrap = new WebConnectionWrap }
 
   @targetName("doTell")
