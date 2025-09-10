@@ -41,6 +41,7 @@ usdt {
     }
 
     websocketServerPort = 8080
+    dropThresholdDays = 30
 }
 ```
 5. Compile and run a fat JAR:
