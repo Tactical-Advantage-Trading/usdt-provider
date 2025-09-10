@@ -38,7 +38,8 @@ case class UsdtDataProvider(contract: String, http1: String, http2: String, http
     val nextIndex = httpIndex + 1
     httpIndex = nextIndex % httpPool.size
     httpPool(httpIndex)
-case class USDT(usdtDataProvider: UsdtDataProvider, websocketServerPort: Int):
+case class USDT(usdtDataProvider: UsdtDataProvider, websocketServerPort: Int, dropThresholdDays: Int):
+  def dropThresholdMsecs = System.currentTimeMillis - dropThresholdDays * 86400L * 1000L
   lazy val address: InetSocketAddress = new InetSocketAddress(websocketServerPort)
   lazy val db: jdbc.PostgresProfile.backend.Database =
     val stream = getClass.getClassLoader.getResourceAsStream("application.conf")

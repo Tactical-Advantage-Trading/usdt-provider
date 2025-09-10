@@ -38,12 +38,16 @@ object RecordTxsUsdtPolygon:
     model.filter(rec => rec.fromAddr === address || rec.toAddr === address)
       .sortBy(_.id.desc).take(25)
 
+  val outdated = Compiled: (threshold: DbOps.LongRep) =>
+    model.filter(_.stamp < threshold)
+
 class RecordTxsUsdtPolygon(tag: Tag) extends Table[RecordTxsUsdtPolygon.DbType](tag, RecordTxsUsdtPolygon.tableName):
   def * = (id, amount, txHash, block, fromAddr, toAddr, data, topics, stamp, isRemoved)
 
   def idx1: Index = index("idx_hash_from_to", (txHash, fromAddr, toAddr), unique = true)
-  def idx2: Index = index("idx_from", fromAddr, unique = false)
-  def idx3: Index = index("idx_to", toAddr, unique = false)
+  def idx2: Index = index("idx_from_addr", fromAddr, unique = false)
+  def idx3: Index = index("idx_to_addr", toAddr, unique = false)
+  def idx4: Index = index("idx_stamp", stamp, unique = false)
   
   def id: Rep[Long] = column[Long]("id", O.PrimaryKey, O.AutoInc)
   def isRemoved: Rep[Boolean] = column[Boolean]("is_removed")

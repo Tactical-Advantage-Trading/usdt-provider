@@ -5,9 +5,10 @@ import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.{DefaultSSLWebSocketServerFactory, WebSocketServer}
 import org.slf4j.{Logger, LoggerFactory}
 import trading.tacticaladvantage.USDT
-
 import java.nio.ByteBuffer
 import java.security.KeyStore
+import java.util.concurrent.TimeUnit
+import slick.jdbc.PostgresProfile.api.*
 import javax.net.ssl.*
 import scala.annotation.targetName
 import scala.util.Random
@@ -16,6 +17,12 @@ class WsServer(conf: USDT) extends WebSocketServer(conf.address):
   val logger: Logger = LoggerFactory.getLogger("backend/WsServer")
   var links: Map[String, Link] = Map.empty
   val usdt = Usdt(conf)
+
+  interval(1, TimeUnit.DAYS) {
+    val query = RecordTxsUsdtPolygon.outdated(conf.dropThresholdMsecs)
+    val dropped = DbOps.txWrite(query.delete, conf.db)
+    logger.info(s"Dropped $dropped tx records")
+  }
 
   def init(keystoreResource: String, storePass: Array[Char] = "123456".toCharArray): Unit =
     val stream = getClass.getClassLoader.getResourceAsStream(keystoreResource)

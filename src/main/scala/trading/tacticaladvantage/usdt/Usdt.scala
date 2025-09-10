@@ -80,7 +80,6 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
   var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
-    var sub: Try[Disposable] = uninitialized
     val wssUri = new URI(conf.usdtDataProvider.nextWss)
     val wsClient = new org.web3j.protocol.websocket.WebSocketClient(wssUri):
       override def onClose(code: Int, reason: String, fromRemote: Boolean): Unit =
@@ -88,17 +87,16 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         delay(2) { wrap = new WebConnectionWrap }
         transferHistoryCache.invalidateAll
         balanceNonceCache.invalidateAll
-        sub.foreach(_.dispose)
       override def onError(e: Exception): Unit =
         onClose(-1, "onError", fromRemote = false)
         super.onError(e)
 
-    val currentActiveWebSocket = WebSocketService(wsClient, true)
-    val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
+    val currentActiveWebSocket =
+      WebSocketService(wsClient, true)
 
-    sub = Try:
-      currentActiveWebSocket.connect
-      logger.info(s"Started successfully with $wssUri")
+    if Try(currentActiveWebSocket.connect).isSuccess then
+      logger.info(s"USDt started successfully with $wssUri")
+      val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
       currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
@@ -127,6 +125,9 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         DbOps.txWrite(DBIO.sequence(res), conf.db)
         broadcastCurrentBlock(currentBlock)
       }, _ => wsClient.closeBlocking)
+    else
+      logger.info(s"USDt failed with $wssUri")
+      delay(2) { wrap = new WebConnectionWrap }
 
   @targetName("doTell")
   def !! (event: Any): Unit =
