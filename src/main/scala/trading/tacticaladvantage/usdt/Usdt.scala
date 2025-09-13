@@ -115,9 +115,16 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
 
           if address2Watch.contains(transfer.toAddr) then sendBalanceNonce(transfer.toAddr)
           if address2Watch.contains(transfer.fromAddr) then sendBalanceNonce(transfer.fromAddr)
-          for watch <- address2Watch.get(transfer.toAddr) orElse address2Watch.get(transfer.fromAddr) do
-            watch.link.reply(watch.req, ResponseArguments.UsdtTransfers(transfer :: Nil).asSome)
-            logger.info(s"${transfer.fromAddr} -> ${transfer.toAddr}, ${transfer.amount}")
+
+          for watch <- address2Watch.get(transfer.toAddr) do
+            logger.info(s"-> ${transfer.toAddr}, ${transfer.amount}")
+            val msg = ResponseArguments.UsdtTransfers(transfer :: Nil)
+            watch.link.reply(watch.req, msg.asSome)
+
+          for watch <- address2Watch.get(transfer.fromAddr) do
+            logger.info(s"${transfer.fromAddr} ->, ${transfer.amount}")
+            val msg = ResponseArguments.UsdtTransfers(transfer :: Nil)
+            watch.link.reply(watch.req, msg.asSome)
 
           RecordTxsUsdtPolygon.upsert(transfer.amount, transfer.hash, transfer.block, transfer.fromAddr,
             transfer.toAddr, log.getData, log.getTopics.asScala.mkString(","), transfer.stamp, transfer.isRemoved)
