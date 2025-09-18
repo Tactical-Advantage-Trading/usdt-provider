@@ -56,7 +56,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         for (_, amount, txHash, block, fromAddr, toAddr, _, _, stamp, isRemoved) <- result yield
           UsdtTransfer(amount, fromAddr, toAddr, txHash, block, stamp, isRemoved)
     CacheBuilder.newBuilder
-      .expireAfterAccess(28, TimeUnit.DAYS)
+      .expireAfterAccess(7, TimeUnit.DAYS)
       .maximumSize(100_000)
       .build(loader)
 
@@ -70,7 +70,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         val balance = convertBalance(ethCall.send.getValue).toString
         ResponseArguments.UsdtBalanceNonce(address, balance, "0x1")
     CacheBuilder.newBuilder
-      .expireAfterAccess(28, TimeUnit.DAYS)
+      .expireAfterAccess(10, TimeUnit.MINUTES)
       .maximumSize(100_000)
       .build(loader)
 
