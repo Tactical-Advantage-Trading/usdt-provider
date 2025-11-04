@@ -75,7 +75,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       .build(loader)
 
   var currentBlock = 0L
-  var address2Watch = Map.empty[String, Watch].withDefaultValue(new String)
+  var address2Watch = Map.empty[String, Watch]
   var connId2Watch = Map.empty[String, Watches].withDefaultValue(Set.empty)
   var wrap: WebConnectionWrap = uninitialized
 
@@ -97,7 +97,7 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       WebSocketService(wsClient, true)
 
     if Try(currentActiveWebSocket.connect).isSuccess then
-      logger.info(s"USDT/Polygon started successfully with $wssUri")
+      logger.info(s"socket started successfully with $wssUri")
       val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
       sub = currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
