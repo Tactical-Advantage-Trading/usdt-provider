@@ -75,11 +75,12 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
       .build(loader)
 
   var currentBlock = 0L
-  var address2Watch = Map.empty[String, Watch]
+  var address2Watch = Map.empty[String, Watch].withDefaultValue(new String)
   var connId2Watch = Map.empty[String, Watches].withDefaultValue(Set.empty)
   var wrap: WebConnectionWrap = uninitialized
 
   class WebConnectionWrap:
+    var sub: Disposable = uninitialized
     val wssUri = new URI(conf.usdtDataProvider.nextWss)
     val wsClient = new org.web3j.protocol.websocket.WebSocketClient(wssUri):
       override def onClose(code: Int, reason: String, fromRemote: Boolean): Unit =
@@ -87,17 +88,18 @@ class Usdt(conf: USDT) extends StateMachine[Nothing]:
         delay(2) { wrap = new WebConnectionWrap }
         transferHistoryCache.invalidateAll
         balanceNonceCache.invalidateAll
+        sub.dispose
       override def onError(e: Exception): Unit =
-        onClose(-1, "onError", fromRemote = false)
+        logger.info(s"Error, e=$e")
         super.onError(e)
 
     val currentActiveWebSocket =
       WebSocketService(wsClient, true)
 
     if Try(currentActiveWebSocket.connect).isSuccess then
-      logger.info(s"started successfully with $wssUri")
+      logger.info(s"USDT/Polygon started successfully with $wssUri")
       val req = new Request("eth_subscribe", paramsList, currentActiveWebSocket, subClass)
-      currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
+      sub = currentActiveWebSocket.subscribe(req, "eth_unsubscribe", logExtClass).buffer(100).subscribe(logs => {
         val res = logs.asScala.map(_.getParams.getResult).filter(l => convertBalance(l.getData) >= 0.01D).map: log =>
           currentBlock = Option(log.getBlockNumber).map(Numeric.decodeQuantity).map(_.longValue).getOrElse(currentBlock)
 
