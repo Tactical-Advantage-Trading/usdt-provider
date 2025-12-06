@@ -15,7 +15,7 @@ object DbOps:
   type LongRep = Rep[Long]
   type StringRep = Rep[String]
   
-  val span: FiniteDuration = 60.seconds
+  val span: FiniteDuration = 30.minutes
   val removeTables = DBIO.seq(RecordTxsUsdtPolygon.model.schema.dropIfExists)
   val createTables = DBIO.seq(RecordTxsUsdtPolygon.model.schema.createIfNotExists)
   
